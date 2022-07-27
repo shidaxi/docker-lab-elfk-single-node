@@ -1,0 +1,6 @@
+http.host: "0.0.0.0"
+xpack.monitoring.elasticsearch.hosts: [ "https://elasticsearch1:9200" ]
+xpack.monitoring.elasticsearch.username: "elastic"
+xpack.monitoring.elasticsearch.password: "password"
+xpack.monitoring.elasticsearch.ssl.verification_mode: "none"
+xpack.monitoring.elasticsearch.ssl.certificate_authority: "certs/ca/ca.crt"

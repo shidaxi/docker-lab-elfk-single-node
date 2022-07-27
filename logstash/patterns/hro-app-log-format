@@ -1,0 +1,3 @@
+HRO_APP_LOG_DATETIME %{YEAR} %{MONTH} %{MONTHDAY} %{TIME}
+HRO_APP_THREAD (\[\w+\] )?.+
+HRO_APP_LOG_FORMAT \[%{HRO_APP_THREAD:thread}\] %{HRO_APP_LOG_DATETIME:datetime} \[%{WORD:level}\] %{GREEDYDATA:content}

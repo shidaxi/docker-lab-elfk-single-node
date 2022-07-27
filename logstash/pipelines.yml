@@ -1,0 +1,4 @@
+- pipeline.id: nginx-access-log
+  path.config: "pipelines/pipe-nginx-access-log.conf"
+- pipeline.id: hro-app-log
+  path.config: "pipelines/pipe-hro-app-log.conf"

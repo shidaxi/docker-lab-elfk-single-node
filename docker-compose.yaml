@@ -1,0 +1,236 @@
+version: "3.7"
+
+networks:
+  elastic:
+    ipam: 
+      config: 
+      - subnet: 172.30.0.0/24
+
+services:
+  es_init_certs:
+    container_name: es_init_certs
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_STACK_VERSION}
+    command: >
+      bash -c '
+        if [[ ! -f /certs/bundle.zip ]]; then
+          bin/elasticsearch-certutil cert --silent --pem --in config/certificates/instances.yaml -out /certs/bundle.zip;
+          unzip /certs/bundle.zip -d /certs;
+        fi;
+        chown -R 1000:0 /certs
+      '
+    working_dir: /usr/share/elasticsearch
+    volumes:
+      - ./certs/:/certs
+      - ./certs/:/usr/share/elasticsearch/config/certificates
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.200
+  elasticsearch1:
+    container_name: elasticsearch1
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_STACK_VERSION}
+    restart: always
+    environment:
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - node.name=elasticsearch1
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - http.cors.enabled=true
+      - http.cors.allow-origin=*
+      - network.host=0.0.0.0
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/elasticsearch1/elasticsearch1.key
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.http.ssl.certificate=certs/elasticsearch1/elasticsearch1.crt
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.verification_mode=certificate 
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.certificate=certs/elasticsearch1/elasticsearch1.crt
+      - xpack.security.transport.ssl.key=certs/elasticsearch1/elasticsearch1.key
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - ./data/es:/usr/share/elasticsearch/data
+      - ./certs:/usr/share/elasticsearch/config/certs
+    ports:
+      - 9200:9200
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.2
+    depends_on:
+      es_init_certs: 
+        condition: service_completed_successfully
+    mem_limit: ${ES_MEM_LIMIT}
+  kibana:
+    container_name: kibana
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_STACK_VERSION}
+    restart: always
+    environment:
+      - ELASTICSEARCH_HOSTS=https://elasticsearch1:9200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
+      - SERVER_SSL_ENABLED=true
+      - SERVER_SSL_KEY=/certs/kibana/kibana.key
+      - SERVER_SSL_CERTIFICATE=/certs/kibana/kibana.crt
+      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=/certs/ca/ca.crt
+      - ELASTICSEARCH_SSL_VERIFICATIONMODE=certificate
+    volumes:
+      - ./certs:/certs
+    ports:
+      - 5601:5601
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.3
+    links:
+      - elasticsearch1 
+    depends_on:
+      - elasticsearch1 
+  zookeeper1:
+    container_name: zookeeper1
+    platform: linux/x86_64 # for mac m1 user
+    image: confluentinc/cp-zookeeper:${CONFLUENT_VERSION}
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_INIT_LIMIT: 5
+      ZOOKEEPER_SYNC_LIMIT: 2
+    ports:
+     - "2181:2181"
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.4
+    mem_limit: ${ZK_MEM_LIMIT}
+  zoonavigator:
+    container_name: zoonavigator
+    image: elkozmon/zoonavigator:${ZOONAVIGATOR_VERSION}
+    ports:
+      - "8000:8000"
+    environment:
+      HTTP_PORT: 8000
+      AUTO_CONNECT_CONNECTION_STRING: zookeeper1:2181
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.5
+    depends_on:
+      - zookeeper1
+  kafka1:
+    container_name: kafka1
+    platform: linux/x86_64 # for mac m1 user
+    image: confluentinc/cp-kafka:${CONFLUENT_VERSION}
+    depends_on:
+      - zookeeper1
+    ports:
+      - "9092:9092"
+      - "9991:9991"
+    environment:
+      KAFKA_BROKER_ID: 101
+      KAFKA_JMX_PORT: 9991
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper1:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: kafka1:29092
+      CONFLUENT_METRICS_REPORTER_ZOOKEEPER_CONNECT: zookeeper1:2181
+      CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+      CONFLUENT_METRICS_ENABLE: 'false'
+      KAFKA_HEAP_OPTS: ${KAFKA_BROKER_HEAP_OPTS}
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.6
+    mem_limit: ${KAFKA_BROKER_MEM_LIMIT}
+  kafdrop:
+    container_name: kafdrop
+    build: 
+      context: ./kafdrop
+    # image: obsidiandynamics/kafdrop:3.30.0
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: "kafka1:29092"
+      JVM_OPTS: -Xms16M -Xmx48M -Xss180K -XX:-TieredCompilation -XX:+UseStringDeduplication -noverify
+    restart: always
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.7
+    depends_on:
+      - kafka1
+    links:
+      - kafka1
+    mem_limit: ${KAFDROP_MEM_LIMIT}
+  filebeat:
+    container_name: filebeat
+    image: docker.elastic.co/beats/filebeat:${ELASTIC_STACK_VERSION:-7.16.2}
+    # https://github.com/docker/swarmkit/issues/1951
+    hostname: filebeat
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yaml:/usr/share/filebeat/filebeat.yml
+      - ./data/filebeat:/usr/share/filebeat/data
+      - ./logs:/tmp/var/logs
+    command: ["--strict.perms=false"]
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.8
+    depends_on:
+      - kafka1
+    links:
+      - kafka1
+    mem_limit: ${FB_MEM_LIMIT}
+    deploy:
+      mode: global
+  metricbeat:
+    container_name: metricbeat
+    image: docker.elastic.co/beats/metricbeat:${ELASTIC_VERSION:-7.16.2}
+    # https://github.com/docker/swarmkit/issues/1951
+    hostname: metricbeat
+    user: root
+    volumes:
+      - ./metricbeat/metricbeat.yaml:/usr/share/metricbeat/metricbeat.yml:ro
+      - /proc:/hostfs/proc:ro
+      - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+      - /:/hostfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/metricbeat:/usr/share/metricbeat/data
+    environment:
+      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-elasticsearch1}
+      - KIBANA_HOST=${KIBANA_HOST:-kibana}
+      - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-elastic}
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:-password}
+    command: ["--strict.perms=false", "-system.hostfs=/hostfs"]
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.9
+    deploy:
+      mode: global
+    mem_limit: ${MB_MEM_LIMIT}
+  logstash:
+    container_name: logstash
+    image: docker.elastic.co/logstash/logstash:${ELASTIC_STACK_VERSION}
+    volumes:
+      - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logstash/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+      - ./logstash/pipelines:/usr/share/logstash/pipelines:ro
+      - ./logstash/patterns:/usr/share/logstash/config/patterns:ro
+      - ./certs:/usr/share/logstash/certs:ro
+    ports:
+      - "5000:5000"
+    environment:
+      LS_JAVA_OPTS: ${LS_HEAP_OPTS}
+    networks:
+      elastic:
+        ipv4_address: 172.30.0.10
+    depends_on:
+      - elasticsearch1
+    links:
+      - elasticsearch1
+    mem_limit: ${LS_MEM_LIMIT}
