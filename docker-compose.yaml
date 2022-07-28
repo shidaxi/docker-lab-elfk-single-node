@@ -234,3 +234,25 @@ services:
     links:
       - elasticsearch1
     mem_limit: ${LS_MEM_LIMIT}
+  # redis:
+  #   container_name: redis
+  #   image: redis:5-alpine
+  #   command: --loglevel debug
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     elastic:
+  #       ipv4_address: 172.30.0.20
+  # rabbitmq:
+  #   container_name: rabbitmq
+  #   image: docker.io/bitnami/rabbitmq:3.10
+  #   ports:
+  #     - 4369:4369
+  #     - 5551:5551
+  #     - 5552:5552
+  #     - 5672:5672
+  #     - 25672:25672
+  #     - 15672:15672
+  #   environment:
+  #     - RABBITMQ_SECURE_PASSWORD=yes
+  #     - RABBITMQ_LOGS=-
