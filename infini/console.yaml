@@ -1,0 +1,60 @@
+elasticsearch:
+  - name: default
+    enabled: true
+    monitored: true
+    endpoint: https://elasticsearch1:9200
+    basic_auth:
+      username: elastic
+      password: password
+    discovery:
+      enabled: true
+
+web:
+  enabled: true
+  embedding_api: true
+  auth:
+    enabled: false
+  ui:
+    enabled: true
+    path: .public
+    vfs: true
+    local: true
+  network:
+    binding: 0.0.0.0:9000
+    skip_occupied_port: true
+  gzip:
+    enabled: true
+
+elastic:
+  elasticsearch: elasticsearch1
+  enabled: true
+  remote_configs: true
+  health_check:
+    enabled: true
+    interval: 30s
+  availability_check:
+    enabled: true
+    interval: 60s
+  metadata_refresh:
+    enabled: true
+    interval: 30s
+  cluster_settings_check:
+    enabled: true
+    interval: 20s
+  orm:
+    enabled: true
+    init_template: true
+    template_name: ".infini"
+    index_prefix: ".infini_"
+
+metrics:
+  enabled: true
+  major_ip_pattern: "192.*"
+  queue: metrics
+  elasticsearch:
+    enabled: true
+    cluster_stats: true
+    node_stats: true
+    index_stats: true
+
+pipeline: []

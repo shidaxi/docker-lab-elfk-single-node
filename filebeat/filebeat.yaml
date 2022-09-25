@@ -20,6 +20,15 @@ filebeat.inputs:
     multiline.pattern: '^\['
     multiline.negate: true
     multiline.match: after
+    filebeat.inputs:
+  - type: syslog
+    format: auto
+    protocol.tcp:
+      host: "0.0.0.0:514"
+  - type: syslog
+    format: auto
+    protocol.udp:
+      host: "0.0.0.0:514"
 
 processors:
   - add_host_metadata: ~
